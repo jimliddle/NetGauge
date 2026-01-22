@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#111827">
+    <meta name="description" content="NetGauge: A privacy-focused internet speed test using M-Lab nodes.">
+    
+    <!-- PWA Manifest & Icons -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <title>SpeedTest & History</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        /* Custom Gauge Animation */
+        .gauge-bg {
+            stroke: #374151; /* gray-700 */
+        }
+        .gauge-fill {
+            stroke: #10b981; /* emerald-500 */
+            transition: stroke-dashoffset 0.1s linear; /* Faster transition for live data */
+        }
+        .glass-panel {
+            background: rgba(31, 41, 55, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen font-sans selection:bg-emerald-500 selection:text-white">
+
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8">
+            <div class="flex items-center gap-3">
+                <!-- <i class="ph-fill ph-lightning text-4xl text-emerald-400"></i> -->
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">NetGauge</h1>
+                    <p class="text-gray-400 text-sm">Upload/Download Test using M-Lab™</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button id="clearDbBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors text-sm font-medium">
+                    <i class="ph ph-trash"></i> Clear History
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            
+            <!-- Speed Gauge Section -->
+            <div class="col-span-1 md:col-span-2 glass-panel rounded-2xl p-8 flex flex-col items-center justify-center relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-cyan-500"></div>
+                
+                <!-- Server Info Badge -->
+                <div id="serverInfo" class="absolute top-4 right-4 text-xs font-mono text-gray-500 bg-gray-800/50 px-2 py-1 rounded hidden">
+                    <i class="ph-fill ph-hard-drives"></i> <span id="serverLocation">Locating...</span>
+                </div>
+
+                <!-- SVG Gauge -->
+                <div class="relative w-64 h-32 mb-8">
+                    <svg class="w-full h-full overflow-visible" viewBox="0 0 200 100">
+                        <!-- Background Arc -->
+                        <path class="gauge-bg" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke-width="20" stroke-linecap="round" />
+                        <!-- Fill Arc -->
+                        <path id="gaugePath" class="gauge-fill" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke-width="20" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+                    </svg>
+                    <!-- Needle/Value -->
+                    <div class="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-4 text-center">
+                        <div id="liveSpeed" class="text-5xl font-bold text-emerald-400 font-mono">0.0</div>
+                        <div class="text-gray-400 text-sm font-medium uppercase tracking-widest mt-1">Mbps</div>
+                    </div>
+                </div>
+
+                <!-- Status Text -->
+                <div id="statusText" class="text-xl font-medium text-gray-300 mb-6 h-8">Ready to test</div>
+
+                <!-- Start Button -->
+                <button id="startBtn" class="group relative px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-gray-900 font-bold rounded-full transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="flex items-center gap-2">
+                        <i class="ph-bold ph-play"></i> Start Full Test
+                    </span>
+                </button>
+            </div>
+
+            <!-- Current Stats Details -->
+            <div class="col-span-1 flex flex-col gap-4">
+                <!-- Download Card -->
+                <div class="glass-panel p-6 rounded-xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Download</p>
+                        <h3 id="finalDownload" class="text-2xl font-bold text-white">--</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                        <i class="ph-bold ph-download-simple text-xl"></i>
+                    </div>
+                </div>
+                
+                <!-- Upload Card -->
+                <div class="glass-panel p-6 rounded-xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Upload</p>
+                        <h3 id="finalUpload" class="text-2xl font-bold text-white">--</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400">
+                        <i class="ph-bold ph-upload-simple text-xl"></i>
+                    </div>
+                </div>
+
+                <!-- Ping Card -->
+                <div class="glass-panel p-6 rounded-xl flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Latency</p>
+                        <h3 id="finalPing" class="text-2xl font-bold text-white">--</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400">
+                        <i class="ph-bold ph-activity text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="glass-panel rounded-2xl overflow-hidden">
+            <div class="p-6 border-b border-gray-700/50 flex justify-between items-center">
+                <h2 class="text-lg font-semibold flex items-center gap-2">
+                    <i class="ph ph-clock-counter-clockwise text-emerald-400"></i> History
+                </h2>
+                <span id="recordCount" class="text-xs font-mono text-gray-400 bg-gray-800 px-2 py-1 rounded">0 records</span>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-gray-400">
+                    <thead class="bg-gray-800/50 text-gray-200 uppercase text-xs font-semibold">
+                        <tr>
+                            <th class="px-6 py-4">Date & Time</th>
+                            <th class="px-6 py-4 text-right">Download</th>
+                            <th class="px-6 py-4 text-right">Upload</th>
+                            <th class="px-6 py-4 text-right">Latency</th>
+                            <th class="px-6 py-4 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyList" class="divide-y divide-gray-700/50">
+                        <!-- History items will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="emptyState" class="p-12 text-center hidden">
+                <i class="ph ph-ghost text-4xl text-gray-600 mb-2"></i>
+                <p class="text-gray-500">No test history found</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 0. Service Worker Registration (PWA) ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+
+        // --- 1. IndexedDB Manager (Unchanged logic, robust) ---
+        const DB_NAME = 'SpeedTestDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'results';
+
+        const dbApi = {
+            db: null,
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onerror = (event) => reject('Database error: ' + event.target.error);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                            store.createIndex('date', 'date', { unique: false });
+                        }
+                    };
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve(this.db);
+                    };
+                });
+            },
+            async addResult(result) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.add(result);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async getAllResults() {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.getAll();
+                    request.onsuccess = () => {
+                        const results = request.result.sort((a, b) => b.id - a.id);
+                        resolve(results);
+                    };
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async deleteResult(id) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.delete(id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async clearAll() {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+        };
+
+        // --- 2. NDT7 Speed Test Logic (M-Lab) ---
+        // This connects to the Measurement Lab Locating Service to find a nearby server
+        // and runs true upload/download tests using WebSockets.
+        
+        class NDT7Tester {
+            constructor(uiCallbacks) {
+                this.ui = uiCallbacks;
+                this.urls = null;
+                this.stopped = false;
+            }
+
+            async locateServer() {
+                let errors = [];
+
+                // Strategy 1: V2 API (Standard, Most Reliable)
+                try {
+                    const response = await fetch("https://locate.measurementlab.net/v2/nearest/ndt/ndt7");
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.results && data.results.length > 0) {
+                            const server = data.results[0];
+                            const locStr = (server.location && server.location.city) 
+                                ? `${server.location.city}, ${server.location.country}` 
+                                : "M-Lab Server";
+                            
+                            this.ui.onServerFound(locStr);
+                            return server.urls;
+                        }
+                    } else {
+                        throw new Error(`V2 API returned ${response.status}`);
+                    }
+                } catch (e) {
+                    console.warn("M-Lab V2 Locate failed, trying fallback...", e);
+                    errors.push(e.message);
+                }
+
+                // Strategy 2: Legacy API (Fallback)
+                try {
+                    // Try without geo_options sometimes helps if IP geo-location is blocked
+                    const response = await fetch("https://locate.measurementlab.net/ndt_ssl");
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Legacy API structure can vary, but usually has results or is an array
+                        const results = data.results || (Array.isArray(data) ? data : []);
+                        
+                        if (results.length > 0) {
+                            const server = results[0];
+                            this.ui.onServerFound("M-Lab Server (Legacy)");
+                            return server.urls || {
+                                "wss:///ndt/v7/download": `wss://${server.fqdn}/ndt/v7/download`,
+                                "wss:///ndt/v7/upload": `wss://${server.fqdn}/ndt/v7/upload`
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.warn("M-Lab Legacy Locate failed", e);
+                    errors.push(e.message);
+                }
+
+                throw new Error("Could not find a nearby server. Please check your internet connection or firewall.");
+            }
+
+            async run() {
+                try {
+                    this.ui.onStatusChange("Locating Server...");
+                    this.urls = await this.locateServer();
+                    
+                    if (!this.urls) throw new Error("Server location returned no URLs");
+
+                    // 1. Download Test
+                    this.ui.onStatusChange("Testing Download...");
+                    // Construct URLs if missing protocol
+                    let dlUrl = this.urls['wss:///ndt/v7/download'];
+                    let ulUrl = this.urls['wss:///ndt/v7/upload'];
+                    
+                    if (!dlUrl || !ulUrl) {
+                        throw new Error("Invalid server configuration received.");
+                    }
+
+                    const downloadSpeed = await this.runDownload(dlUrl);
+                    this.ui.onDownloadResult(downloadSpeed);
+
+                    // Wait a moment
+                    await new Promise(r => setTimeout(r, 500));
+
+                    // 2. Upload Test
+                    this.ui.onStatusChange("Testing Upload...");
+                    const uploadSpeed = await this.runUpload(ulUrl);
+                    this.ui.onUploadResult(uploadSpeed);
+
+                    // 3. Latency (Estimate from handshake or HTTP ping as fallback)
+                    // Note: NDT7 provides RTT inside the download measurements, we can capture the min RTT.
+                    this.ui.onStatusChange("Finalizing...");
+                    const latency = this.minRTT || await this.measurePing(); // Fallback if RTT not captured
+                    this.ui.onPingResult(latency);
+
+                    this.ui.onStatusChange("Test Complete");
+                    
+                    return {
+                        id: Date.now(),
+                        date: new Date().toLocaleString(),
+                        ping: latency,
+                        download: downloadSpeed,
+                        upload: uploadSpeed
+                    };
+
+                } catch (error) {
+                    console.error(error);
+                    this.ui.onStatusChange("Error: " + (error.message || "Test Failed"));
+                    return null;
+                }
+            }
+
+            measurePing() {
+                return new Promise(async (resolve) => {
+                    const start = performance.now();
+                    try {
+                        await fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' });
+                    } catch(e) {}
+                    resolve(Math.round(performance.now() - start));
+                });
+            }
+
+            // NDT7 Download: Connect to WSS, receive binary blobs, calc speed
+            async runDownload(url) {
+                return new Promise((resolve, reject) => {
+                    const socket = new WebSocket(url, 'net.measurementlab.ndt.v7');
+                    let start = performance.now();
+                    let receivedBytes = 0;
+                    let lastUpdate = 0;
+                    this.minRTT = 9999;
+
+                    socket.onopen = () => { start = performance.now(); };
+                    
+                    socket.onmessage = (ev) => {
+                        if (typeof ev.data === 'string') {
+                            // Measurement JSON from server
+                            try {
+                                const msg = JSON.parse(ev.data);
+                                if (msg.TCPInfo && msg.TCPInfo.MinRTT) {
+                                    this.minRTT = Math.min(this.minRTT, msg.TCPInfo.MinRTT / 1000); // Microseconds to ms
+                                }
+                            } catch(e) {}
+                            return;
+                        }
+                        
+                        // Binary data
+                        receivedBytes += ev.data.size;
+                        const now = performance.now();
+                        
+                        // Update UI every 200ms
+                        if (now - lastUpdate > 200) {
+                            const duration = (now - start) / 1000;
+                            const speedMbps = ((receivedBytes * 8) / duration / 1000000).toFixed(2);
+                            this.ui.onProgress(speedMbps);
+                            lastUpdate = now;
+                        }
+                    };
+
+                    socket.onclose = () => {
+                        const duration = (performance.now() - start) / 1000;
+                        const finalSpeed = ((receivedBytes * 8) / duration / 1000000).toFixed(2);
+                        resolve(finalSpeed);
+                    };
+
+                    socket.onerror = (e) => reject("Download Socket Error");
+                });
+            }
+
+            // NDT7 Upload: Connect to WSS, blast binary blobs to server
+            async runUpload(url) {
+                return new Promise((resolve, reject) => {
+                    const socket = new WebSocket(url, 'net.measurementlab.ndt.v7');
+                    const BUFFER_SIZE = 8192; // Chunk size
+                    // Create a random blob to send
+                    const data = new Uint8Array(BUFFER_SIZE); 
+                    for (let i = 0; i < BUFFER_SIZE; ++i) data[i] = Math.random() * 255;
+                    
+                    let start = performance.now();
+                    let lastUpdate = 0;
+                    let uploadSpeed = 0;
+                    let keepSending = true;
+
+                    socket.onopen = () => {
+                        start = performance.now();
+                        // Start the pump loop
+                        const pump = () => {
+                            if (!keepSending) return;
+                            // Keep buffer reasonably full but not exploding (8MB target)
+                            while (socket.bufferedAmount < 8388608) { 
+                                if (socket.readyState === WebSocket.OPEN) {
+                                    socket.send(data);
+                                } else {
+                                    break;
+                                }
+                            }
+                            if (socket.readyState === WebSocket.OPEN) requestAnimationFrame(pump);
+                        };
+                        pump();
+                    };
+
+                    socket.onmessage = (ev) => {
+                        if (typeof ev.data === 'string') {
+                            try {
+                                const msg = JSON.parse(ev.data);
+                                // The server tells us how much it received. This is the source of truth for upload speed.
+                                // NDT7 server reports 'TCPInfo.BytesReceived' (cumulative)
+                                if (msg.TCPInfo && msg.TCPInfo.BytesReceived) {
+                                    const now = performance.now();
+                                    const bytes = msg.TCPInfo.BytesReceived;
+                                    const duration = (msg.TCPInfo.ElapsedTime || (now - start) * 1000) / 1000000; // seconds
+                                    
+                                    // Calculate Mbps
+                                    const currentSpeed = ((bytes * 8) / duration / 1000000);
+                                    
+                                    if (now - lastUpdate > 200) {
+                                        this.ui.onProgress(currentSpeed.toFixed(2));
+                                        uploadSpeed = currentSpeed; // Keep track of latest reading
+                                        lastUpdate = now;
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+                    };
+
+                    socket.onclose = () => {
+                        keepSending = false;
+                        resolve(uploadSpeed.toFixed(2));
+                    };
+
+                    socket.onerror = (e) => reject("Upload Socket Error");
+                });
+            }
+        }
+
+        // --- 3. UI Controller ---
+        const ui = {
+            btnStart: document.getElementById('startBtn'),
+            btnClear: document.getElementById('clearDbBtn'),
+            txtStatus: document.getElementById('statusText'),
+            valSpeed: document.getElementById('liveSpeed'),
+            gaugePath: document.getElementById('gaugePath'),
+            
+            resDownload: document.getElementById('finalDownload'),
+            resUpload: document.getElementById('finalUpload'),
+            resPing: document.getElementById('finalPing'),
+            
+            historyList: document.getElementById('historyList'),
+            emptyState: document.getElementById('emptyState'),
+            recordCount: document.getElementById('recordCount'),
+            
+            serverInfoBox: document.getElementById('serverInfo'),
+            serverLocText: document.getElementById('serverLocation'),
+
+            isTesting: false,
+
+            init() {
+                this.btnStart.addEventListener('click', () => this.toggleTest());
+                this.btnClear.addEventListener('click', () => this.clearHistory());
+                this.renderHistory();
+            },
+
+            async toggleTest() {
+                if (this.isTesting) return; 
+                
+                this.setTestingState(true);
+                this.resetCurrentResults();
+
+                const tester = new NDT7Tester({
+                    onServerFound: (loc) => {
+                        this.serverInfoBox.classList.remove('hidden');
+                        this.serverLocText.innerText = loc;
+                    },
+                    onStatusChange: (status) => this.txtStatus.textContent = status,
+                    onProgress: (speed) => this.updateGauge(speed),
+                    onPingResult: (ping) => this.resPing.innerText = `${Math.round(ping)} ms`,
+                    onDownloadResult: (speed) => this.resDownload.innerText = `${speed} Mbps`,
+                    onUploadResult: (speed) => this.resUpload.innerText = `${speed} Mbps`
+                });
+
+                const result = await tester.run();
+
+                if (result) {
+                    await dbApi.addResult(result);
+                    await this.renderHistory();
+                }
+
+                this.setTestingState(false);
+                this.updateGauge(0);
+            },
+
+            setTestingState(isTesting) {
+                this.isTesting = isTesting;
+                this.btnStart.disabled = isTesting;
+                if(isTesting) {
+                    this.btnStart.innerHTML = `<i class="ph ph-spinner animate-spin"></i> Testing...`;
+                    this.btnStart.classList.add('opacity-75');
+                } else {
+                    this.btnStart.innerHTML = `<i class="ph-bold ph-play"></i> Start Full Test`;
+                    this.btnStart.classList.remove('opacity-75');
+                }
+            },
+
+            resetCurrentResults() {
+                this.resDownload.innerText = '--';
+                this.resUpload.innerText = '--';
+                this.resPing.innerText = '--';
+                this.valSpeed.innerText = '0.0';
+                this.serverInfoBox.classList.add('hidden');
+            },
+
+            updateGauge(value) {
+                this.valSpeed.innerText = value;
+                // Scale gauge. Logarithmic scaling helps visualize both 5Mbps and 500Mbps, 
+                // but for simplicity we'll use linear up to 100, then compress.
+                // Actually, let's just do a 0-1000 scale linearly for Gigabit era.
+                // Or better: Max 200, but if higher, just cap visually.
+                let numVal = parseFloat(value);
+                let percentage = Math.min(numVal, 200) / 200; // Display max 200 on gauge visual, number is real
+                
+                const arcLength = 251.2;
+                const offset = arcLength - (arcLength * percentage);
+                this.gaugePath.style.strokeDashoffset = offset;
+            },
+
+            async renderHistory() {
+                const results = await dbApi.getAllResults();
+                this.historyList.innerHTML = '';
+                this.recordCount.textContent = `${results.length} records`;
+
+                if (results.length === 0) {
+                    this.emptyState.classList.remove('hidden');
+                } else {
+                    this.emptyState.classList.add('hidden');
+                    results.forEach(r => {
+                        const row = document.createElement('tr');
+                        row.className = "hover:bg-gray-800/30 transition-colors group";
+                        row.innerHTML = `
+                            <td class="px-6 py-4 font-mono text-gray-300 whitespace-nowrap">${r.date}</td>
+                            <td class="px-6 py-4 text-right font-bold text-cyan-400">${r.download} <span class="text-xs font-normal text-gray-500">Mbps</span></td>
+                            <td class="px-6 py-4 text-right font-bold text-purple-400">${r.upload} <span class="text-xs font-normal text-gray-500">Mbps</span></td>
+                            <td class="px-6 py-4 text-right font-bold text-orange-400">${Math.round(r.ping)} <span class="text-xs font-normal text-gray-500">ms</span></td>
+                            <td class="px-6 py-4 text-center">
+                                <button onclick="deleteEntry(${r.id})" class="p-2 bg-gray-700 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors" title="Delete Entry">
+                                    <i class="ph ph-trash"></i>
+                                </button>
+                            </td>
+                        `;
+                        this.historyList.appendChild(row);
+                    });
+                }
+            },
+
+            async clearHistory() {
+                if(confirm("Are you sure you want to delete all history?")) {
+                    await dbApi.clearAll();
+                    this.renderHistory();
+                }
+            }
+        };
+
+        // --- 4. Global Helpers ---
+        window.deleteEntry = async (id) => {
+            if(confirm("Delete this result?")) {
+                await dbApi.deleteResult(id);
+                ui.renderHistory();
+            }
+        };
+
+        // --- 5. Initialization ---
+        (async () => {
+            try {
+                await dbApi.init();
+                ui.init();
+            } catch (err) {
+                console.error("DB Init Error", err);
+                alert("Database initialization failed.");
+            }
+        })();
+
+    </script>
+</body>
+</html>
