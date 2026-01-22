@@ -1,4 +1,4 @@
-NetGauge is a privacy focused Network speed test client that tests against an M-Lab node and stores all runs in IndexedDb in the client's browser. 
+NetGauge is a privacy focused Network speed test client that tests against an M-Lab node and stores all runs in IndexedDb in the client's mobile browser. 
 
 The App is available directly as an installable PWA for a mobile browser at: https://jimliddle.github.io/NetGauge/
 
