@@ -488,27 +488,62 @@
             async runDownload(url) {
                 return new Promise((resolve, reject) => {
                     const socket = new WebSocket(url, 'net.measurementlab.ndt.v7');
-                    let start = performance.now();
+                    // ArrayBuffers avoid Blob allocation on every download message.
+                    socket.binaryType = 'arraybuffer';
+                    let start = null;
+                    let lastDataTime = null;
                     let receivedBytes = 0;
                     let lastUpdate = 0;
-                    this.minRTT = 9999;
+                    let settled = false;
+                    this.minRTT = null;
 
-                    socket.onopen = () => { start = performance.now(); };
-                    
+                    // NDT7 allows abrupt EOF/reset/timeout after measurements have
+                    // arrived. Preserve those measurements instead of failing the run.
+                    const finish = (warning) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timer);
+                        socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
+                        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+                            socket.close();
+                        }
+                        const duration = start === null || lastDataTime === null
+                            ? 0 : (lastDataTime - start) / 1000;
+                        if (receivedBytes > 0 && duration > 0) {
+                            if (warning) console.warn(warning);
+                            resolve(((receivedBytes * 8) / duration / 1000000).toFixed(2));
+                        } else {
+                            reject(new Error(warning || 'Download ended without receiving any test data. Please try again.'));
+                        }
+                    };
+                    let timer = setTimeout(() => finish('Download connection timed out. Please try again.'), 10000);
+
+                    socket.onopen = () => {
+                        start = performance.now();
+                        lastUpdate = start;
+                        clearTimeout(timer);
+                        // The protocol permits terminating a test after 13 seconds.
+                        timer = setTimeout(() => finish('Download reached its time limit.'), 13000);
+                    };
+
                     socket.onmessage = (ev) => {
                         if (typeof ev.data === 'string') {
                             try {
                                 const msg = JSON.parse(ev.data);
-                                if (msg.TCPInfo && msg.TCPInfo.MinRTT) {
-                                    this.minRTT = Math.min(this.minRTT, msg.TCPInfo.MinRTT / 1000); 
+                                const rtt = msg.TCPInfo && msg.TCPInfo.MinRTT;
+                                if (Number.isFinite(rtt) && rtt > 0) {
+                                    this.minRTT = Math.min(this.minRTT ?? Infinity, rtt / 1000);
                                 }
                             } catch(e) {}
                             return;
                         }
-                        
-                        receivedBytes += ev.data.size;
+
+                        const size = ev.data.byteLength ?? ev.data.size;
+                        if (!Number.isFinite(size) || size <= 0 || start === null) return;
+                        receivedBytes += size;
                         const now = performance.now();
-                        
+                        lastDataTime = now;
+
                         if (now - lastUpdate > 200) {
                             const duration = (now - start) / 1000;
                             const speedMbps = ((receivedBytes * 8) / duration / 1000000).toFixed(2);
@@ -517,13 +552,10 @@
                         }
                     };
 
-                    socket.onclose = () => {
-                        const duration = (performance.now() - start) / 1000;
-                        const finalSpeed = ((receivedBytes * 8) / duration / 1000000).toFixed(2);
-                        resolve(finalSpeed);
-                    };
-
-                    socket.onerror = (e) => reject("Download Socket Error");
+                    // Use the last data timestamp: teardown delays are not download time.
+                    socket.onclose = (event) => finish(event.code === 1000 ? null
+                        : `Download connection closed unexpectedly (code ${event.code}).`);
+                    socket.onerror = () => finish('Download connection interrupted. Please try again.');
                 });
             }
 
@@ -732,3 +764,4 @@
     </script>
 </body>
 </html>
+
